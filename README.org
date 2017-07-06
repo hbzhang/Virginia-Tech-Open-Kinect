@@ -1,0 +1,154 @@
+#+OPTIONS: toc:nil num:0
+#+TITLE: VirginiaTech.OpenKinect
+* A distributed cross platform system for shunting Kinect data around a network.
+
+
+** What is it?
+
+The VirginiaTech.OpenKinect repository is a collection of useful scripts and servers for capturing, filtering, and storing data from a Kinect sensor. Linux, OSX, and Windows are supported. Only [[https://en.wikipedia.org/wiki/Kinect#Kinect_for_Windows][first generation]] Kinect sensor are supported. The Python scripts use Python 2.
+
+
+The system is split into three major components; a producer that generates data, a filter that controls the flow of data, and storage for saving data. These components can all be run on the same machine, or across several machines.
+
+#+CAPTION: A diagram showing the topology of a system with a filter.
+[[./doc/producer_to_filter_to_database.png]]
+
+The filter server is unneseccary. The producer and database can be connected directly.
+
+#+CAPTION: A diagram showing the topology of a system without a filter.
+[[./doc/producer_to_database.png]]
+
+Note that each section of the network can be run on a separate machine.
+
+
+** The Producer
+
+The producer is a small C program that uses the libcurl and libfreenect libraries to push image data to another program. By default, any data is sent to port 5000 of the localhost, port 5000 of the same machine. A different destination can be specified with shell arguments. First comes the hostname and then comes the port number. You cannot put just the hostname or just the port number. It's all or nothing.
+
+The producer has the following dependencies.
+-libfreenect
+-libcurl
+
+#+BEGIN_SRC shell
+# These are equivalent
+./produce
+./produce localhost 5000
+#+END_SRC
+
+A make file comes with the producer source code. Running a short make command should be enough to compile it. If your operating system doesn't support memory mapped files, you'll need to get a third party library.
+
+#+BEGIN_SRC shell
+make produce
+#+END_SRC
+
+** The Filter
+
+The filter is a server that can shrink the frequency of a producer by dropping data. The filter server uses a whitelist of incoming addresses, their destination, and a minimum delay period to control where and how often kinect data is forwarded. The default rule file is the file '.RULE' in the kinect experiment directory; ~/.KinectExperiment on a *nix based OS and ~/AppData/Roaming/KinectExperiment on Windows. A different rule file can be specified with a flag. See the example below for details.
+
+#+BEGIN_SRC shell
+# These are equivalent on Linux or OSX.
+python filter_server.py
+python filter_server.py --rule-path ~/.KinectExperiment/.RULE
+#+END_SRC
+
+The default port to listen on is 5000, but it can be specified with a flag. See the example below for details.
+
+#+BEGIN_SRC shell
+# These are equivalent.
+python filter_server.py
+python filter_server.py --port 5000
+#+END_SRC
+
+The keyword arguments can be combined of course. Order does not matter.
+
+#+BEGIN_SRC shell
+# Multiple keywords
+python filter_server.py --rule-path SLOW_RULE --port 5000
+#+END_SRC
+
+The rule file format is a subset of JSON. The format requires that the top level object be a list containing objects that contain the required keys 'out' and 'out_port'. The 'out' key must contain a valid IPv6 address and 'out_port' must be a valid port number. These required fields are where data will be forwarded to. There are also other optional keys; 'in', 'delay'. If the 'in' field exists, it must contain a valid IPv6 address. The 'in' field describes which IP address the forwarding rule work son. If no 'in' field is specified, then the rule applies to any IP address not specifically mapped to a rule. The 'delay' field is the minimum amount of time between forwards. For instance, if researcher had storage constraints and only wanted to save a frame every five seconds, they could set delay to 5. Currently, delay must be a positive integer. If delay is not specified, then it is assumed to be zero. The fields are summarized in the table below.
+
+| REQUIRED? | FIELD    | VALUE                            | PURPOSE                                                                                                                     |
+| Required  | out      | IPv6 Address                     | What IP to forward data to.                                                                                                 |
+| Required  | out_port | Port Number                      | What port to forward data to.                                                                                               |
+| Optional  | in       | IPv6 Address                     | What IP to apply the rule to. (The port is always the same.) All ports that do not have a prexisting rule if not specified. |
+| Optional  | delay    | An integer within [0, \infinity) | The minimum period between forwarding data. Data sent too early will be dropped.                                            |
+
+Currently, invalid fields will cause the rule file to raise a parser exception. Ideally, the parser would be more permissive and it would be possible to add on fields to an existing JSON file to create a valid rule file. However, the majority of invalid keys are expected to be mistyped field names, and it's better to crash loudly then to silently perform the wrong behavior. This error may be downgraded to a warning.
+
+An example of a rule file with one rule can be seen below. It forwards data from localhost to port 5001 of localhost. The minimum period is ten seconds. Note that the single rule file is contained by a list.
+#+BEGIN_SRC json
+[ { "in" : "0:0:0:0:0:0:0:1", "out" : "0:0:0:0:0:0:0:1", "delay" : "10", "out_port" : "5001" } ]
+#+END_SRC
+
+** The Database
+
+The database accepts requests from anywhere and saves the data to a file and then stores metadata about that file to a sqlite database. The database and files can be found in ~/.KinectExperiment on a *nix based OS or in ~/AppData/Roaming/KinectExperiment on Windows. The database server runs on port 5000 by default, but it can be instructed to run on any port using a named shell argument. These arguments are where data will be forwarded
+
+#+BEGIN_SRC shell
+# These are equivalent.
+python sql_server.py
+python sql_server.py --port 5001
+#+END_SRC
+
+** Scaffolding
+
+The most common usage for the database and filter is to run them on the same machine with filter connected to an open port. To make this setup easier, there are some shell scripts that can be used to automatically startup and shutdown a server.
+
+#+BEGIN_SRC shell
+drew@deeplearning:/opt/VirginiaTech.OpenKinect$ ./run.sh 
+Started Filter
+Started Database
+drew@deeplearning:/opt/VirginiaTech.OpenKinect$ ./kill.sh 
+Stopped Filter
+Stopped Database
+#+END_SRC
+
+It's safe to run the kill script at any time.
+
+#+BEGIN_SRC shell
+drew@deeplearning:/opt/VirginiaTech.OpenKinect$ ./kill.sh 
+Servers could not be shutoff. Are they running?
+#+END_SRC
+
+You can control what options the scripts will use by altering the files in the conf.d directory. The default file sets up sane defaults, do not change it. The default file's options will be overriden by any lines in the custom file. There is no need to change the default file. The example file shows different options being used with comments explaining their behavior. Not only do these configuration scripts change the flags to the server commands, they also change where logging is output to. By changing the log file option, the logs can be written anywhere.
+
+The startup and shutdown scripts are the perferred way to control a data collection server.
+
+
+** Example
+
+The following shell commands would start all major programs on the same computer and allow them to communicate through ports. This is good for testing or a for using a single machine for all work.
+
+#+BEGIN_SRC shell
+python sql_server.py --port 5001 &
+python filter_server.py --port 5000 &
+./produce localhost 5000 &
+#+END_SRC
+
+And the following rule file would instruct the filter to forward a message to the database server once every ten seconds, at most.
+
+#+BEGIN_SRC json
+[ { "in" : "0:0:0:0:0:0:0:1", "out" : "0:0:0:0:0:0:0:1", "delay" : "10", "out_port" : "5001" } ]
+#+END_SRC
+
+Note that the programs are started in the reverse of which way the data flows. This is so no request will be sent to a server that isn't already up and so that the terminal won't get spammed with log messages.
+
+If you wanted your sensor to send data to an external server, you could do that with the following setup.
+
+
+
+
+
+
+** Other
+
+The program devicep can be used to detect if any sensors can be located. If devicep prints out zero, then no sensor can be detected and the produce program will not work. This is often easier to use than checking for a cord, especially if the cord is in another building.
+
+#+BEGIN_SRC shell
+make devicep
+./devicep
+#+END_SRC
+
+** Security
+By default, this system is not secure. Every server sends data in clear text. The filter server will forward any data its convinced is from a white listed IP address. The database server will save any data sent to it.

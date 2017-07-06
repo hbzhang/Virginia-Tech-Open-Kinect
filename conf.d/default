@@ -1,0 +1,6 @@
+## Do not change!
+## If you want to replace these, override them in
+## the 'custom' file.
+
+LOG_FILE="OpenKinect.log"
+

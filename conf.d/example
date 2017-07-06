@@ -1,0 +1,10 @@
+## An example configuration file for VirgniaTech.OpenKinect.
+## If the run command is used to start the filter and database
+## on the same machine, then a local configuration file can be
+## used to control the options.
+
+DB_PORT=5001					# The port the DB listens on
+DB_SAVE="/var/Experiment/"			# The directory the DB saves to
+FILTER_PORT=5001				# The port the filter listens on
+FILTER_RULE_FILE=/etc/VirginiaTech.OpenKinect.d/RULE # The rule file the filter uses.
+LOG_FILE="OpenKinect.log"			# The file to write logs to.

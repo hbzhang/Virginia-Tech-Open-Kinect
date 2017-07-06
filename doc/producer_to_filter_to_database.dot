@@ -1,0 +1,15 @@
+digraph {
+	rankdir=LR;
+	Sensor [label="Sensor Hardware"]
+	Producer [label="Producer Server"]
+	Filter [label="Filter Server"]
+	Storage [label="Storage Server"]
+	File [label="File System"]
+	subgraph cluster_network {
+		 label="Network";
+		 Producer;
+		 Filter;
+		 Storage;
+	}
+	Sensor -> Producer -> Filter -> Storage -> File;		
+}
